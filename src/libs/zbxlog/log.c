@@ -411,6 +411,9 @@ void	__zbx_zabbix_log(int level, const char *fmt, ...)
 	FILE		*log_file = NULL;
 	char		message[MAX_BUFFER_LEN];
 	va_list		args;
+	long int  thread_id_log;
+	// MAX_STRING_LEN + PID_MAX_LIMIT lenght + dot
+	char      log_filename_thread[MAX_STRING_LEN+8];
 #ifdef _WINDOWS
 	WORD		wType;
 	wchar_t		thread_id[20], *strings[2];
@@ -420,11 +423,22 @@ void	__zbx_zabbix_log(int level, const char *fmt, ...)
 
 	if (LOG_TYPE_FILE == log_type)
 	{
-		lock_log();
+		thread_id_log = zbx_get_thread_id();
 
-		rotate_log(log_filename);
+		// Debug and trace logging its sent to its own file per PID, to avoid locking between procceses.
+		// Debug/trace logfiles will be named like "zabbix_server.log.1234", being "1234" the PID.
+		// Debug/trace logfiles will not be rotated, max file size limit do not have sense here, where
+		// we have a lot of different files.
+		// Information level will be sent to the normal logfile.
+		if (level == LOG_LEVEL_DEBUG || level == LOG_LEVEL_TRACE) {
+			zbx_snprintf(log_filename_thread, sizeof(log_filename_thread), "%s.%d", log_filename, thread_id_log);
+		} else {
+			strscpy(log_filename_thread, log_filename);
+			lock_log();
+			rotate_log(log_filename_thread);
+		}
 
-		if (NULL != (log_file = fopen(log_filename, "a+")))
+		if (NULL != (log_file = fopen(log_filename_thread, "a+")))
 		{
 			long		milliseconds;
 			struct tm	tm;
@@ -433,7 +447,7 @@ void	__zbx_zabbix_log(int level, const char *fmt, ...)
 
 			fprintf(log_file,
 					"%6li:%.4d%.2d%.2d:%.2d%.2d%.2d.%03ld ",
-					zbx_get_thread_id(),
+					thread_id_log,
 					tm.tm_year + 1900,
 					tm.tm_mon + 1,
 					tm.tm_mday,
@@ -452,7 +466,9 @@ void	__zbx_zabbix_log(int level, const char *fmt, ...)
 			zbx_fclose(log_file);
 		}
 
-		unlock_log();
+		if (level != LOG_LEVEL_DEBUG && level != LOG_LEVEL_TRACE) {
+			unlock_log();
+		}
 
 		return;
 	}
