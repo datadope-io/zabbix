@@ -767,6 +767,10 @@ int	zbx_db_connect(char *host, char *user, char *password, char *dbname, char *d
 		values[i++] = cport = zbx_dsprintf(cport, "%d", port);
 	}
 
+    // Only connect to read-write nodes
+	keywords[i] = "target_session_attrs";
+	values[i++] = "read-write";
+
 	keywords[i] = NULL;
 	values[i] = NULL;
 
